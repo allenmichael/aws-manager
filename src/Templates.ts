@@ -17,6 +17,14 @@ export class Templates {
         <pre><%= LogResult %></pre>
     </p>
     `;
+    static readonly GetPolicyTemplate = `
+    <h1>
+        Policy for <%= FunctionName %>...
+    </h1>
+    <p>Policy: 
+        <pre><%- JSON.stringify(JSON.parse(Policy), null, 4) %></pre>
+    </p>
+    `;
     static readonly GetConfigTemplate = `
     <h1>
         Configuration for <%= FunctionName %>...

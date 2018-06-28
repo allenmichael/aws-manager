@@ -1,48 +1,38 @@
 import * as vscode from 'vscode';
-import * as AWS from 'aws-sdk';
-import { FunctionConfiguration } from 'aws-sdk/clients/lambda';
+
 import { AWSError } from 'aws-sdk';
 import * as _ from 'lodash';
 import { Templates } from './Templates';
-import { ClientBuilder } from './ClientBuilder';
+import { quickPickLambda } from './utils/quickPickLambda';
+import { ext } from './extensionGlobals';
+import { IAWSTreeProvider } from './aws-tree-provider';
+import { ILambdaNode } from './commands/models/lambda';
+import { listLambdas } from './commands/lambdas/listLambdas';
 
-export interface LambdaObject {
-    readonly id: string;
-    readonly lambdaClient: AWS.Lambda;
-    readonly lambda: FunctionConfiguration;
-    getChildren(): vscode.ProviderResult<LambdaObject[]>;
-    getTreeItem(): vscode.TreeItem | Thenable<vscode.TreeItem>;
-}
+export class LambdaExplorerProvider implements vscode.TreeDataProvider<ILambdaNode>, IAWSTreeProvider {
+    private _onDidChangeTreeData: vscode.EventEmitter<ILambdaNode | undefined> = new vscode.EventEmitter<ILambdaNode | undefined>();
+    readonly onDidChangeTreeData: vscode.Event<ILambdaNode | undefined> = this._onDidChangeTreeData.event;
 
-export class LambdaExplorerProvider implements vscode.TreeDataProvider<LambdaObject> {
-    lambdaClient: AWS.Lambda;
-    private _onDidChangeTreeData: vscode.EventEmitter<LambdaObject | undefined> = new vscode.EventEmitter<LambdaObject | undefined>();
-    readonly onDidChangeTreeData: vscode.Event<LambdaObject | undefined> = this._onDidChangeTreeData.event;
-
-    constructor(private context: vscode.ExtensionContext, lambdaClient: AWS.Lambda, builderContext: ClientBuilder) {
+    constructor(private context: vscode.ExtensionContext) {
         console.log(process.env);
-        this.lambdaClient = lambdaClient;
         this.context.subscriptions.push(
             vscode.commands.registerCommand('lambdaExplorer.invoke', this.invoke),
             vscode.commands.registerCommand('lambdaExplorer.getConfig', this.getConfig),
-            vscode.commands.registerCommand('lambdaExplorer.configureRegion', async () => {
-                this.lambdaClient = await builderContext.configureRegion('lambda') as AWS.Lambda;
-                this.refresh();
-            })
+            vscode.commands.registerCommand('lambdaExplorer.getPolicy', this.getPolicy)
         );
     }
 
 
-    getTreeItem(element: LambdaObject): vscode.TreeItem | Thenable<vscode.TreeItem> {
+    getTreeItem(element: ILambdaNode): vscode.TreeItem | Thenable<vscode.TreeItem> {
         return element.getTreeItem();
     }
-    getChildren(lambda?: LambdaObject): vscode.ProviderResult<any[]> {
+    getChildren(lambda?: ILambdaNode): vscode.ProviderResult<any[]> {
         if (lambda) {
             console.log(lambda);
             return lambda.getChildren();
         }
         console.log("No lambda found..");
-        return this.getLambdas();
+        return listLambdas();
     }
 
     refresh() {
@@ -54,12 +44,12 @@ export class LambdaExplorerProvider implements vscode.TreeDataProvider<LambdaObj
     //     await vscode.commands.executeCommand('lambdaExplorer.refresh');
     // }
 
-    private async invoke(element: LambdaObject) {
+    private async invoke(element: ILambdaNode) {
         const view = vscode.window.createWebviewPanel('html', `Invoked ${element.lambda.FunctionName}`, -1);
         try {
             const baseTemplateFn = _.template(Templates.BaseTemplate);
             view.webview.html = baseTemplateFn({ content: `<h1>Loading...</h1>` });
-            const funcResponse = await element.lambdaClient.invoke({ FunctionName: element.lambda.FunctionArn!, LogType: 'Tail' }).promise();
+            const funcResponse = await ext.lambdaClient.invoke({ FunctionName: element.lambda.FunctionArn!, LogType: 'Tail' }).promise();
             const logs = funcResponse.LogResult ? Buffer.from(funcResponse.LogResult, 'base64') : "";
             const payload = funcResponse.Payload ? funcResponse.Payload : JSON.stringify({});
             const invokeTemplateFn = _.template(Templates.InvokeTemplate);
@@ -79,12 +69,12 @@ export class LambdaExplorerProvider implements vscode.TreeDataProvider<LambdaObj
         }
     }
 
-    private async getConfig(element: LambdaObject) {
+    private async getConfig(element: ILambdaNode) {
         const view = vscode.window.createWebviewPanel('html', `Get config for ${element.lambda.FunctionName}`, -1);
         try {
             const baseTemplateFn = _.template(Templates.BaseTemplate);
             view.webview.html = baseTemplateFn({ content: `<h1>Loading...</h1>` });
-            const funcResponse = await element.lambdaClient.getFunctionConfiguration({
+            const funcResponse = await ext.lambdaClient.getFunctionConfiguration({
                 FunctionName: element.lambda.FunctionName!
             }).promise();
             const getConfigTemplateFn = _.template(Templates.GetConfigTemplate);
@@ -100,40 +90,38 @@ export class LambdaExplorerProvider implements vscode.TreeDataProvider<LambdaObj
         }
     }
 
-    private async getLambdas(): Promise<LambdaObject[]> {
-        const status = vscode.window.setStatusBarMessage('Loading lambdas...');
-        try {      
-            const lambdas = await this.lambdaClient.listFunctions().promise();
-            status.dispose();
-            const functions = lambdas.Functions ? lambdas.Functions : [];
-            return functions.map(l => {
-                const name = l.FunctionName ? l.FunctionName : "";
-                return new Lambda(name, l, this.lambdaClient);
+    private async getPolicy(element?: ILambdaNode) {
+        let lambda: ILambdaNode;
+        try {
+            if (element && element.id) {
+                console.log('found an element to work with...');
+                lambda = element;
+            } else {
+                console.log('need to prompt for lambda');
+                const lambdas = await listLambdas();
+                const selection = await quickPickLambda(lambdas);
+                if (selection && selection.id) {
+                    lambda = selection;
+                } else {
+                    throw new Error('No lambda found.');
+                }
+            }
+            const view = vscode.window.createWebviewPanel('html', `Getting policy for ${lambda.lambda.FunctionName}`, -1);
+            const baseTemplateFn = _.template(Templates.BaseTemplate);
+            view.webview.html = baseTemplateFn({ content: `<h1>Loading...</h1>` });
+            const funcResponse = await ext.lambdaClient.getPolicy({ FunctionName: lambda.lambda.FunctionName! }).promise();
+            const getPolicyTemplateFn = _.template(Templates.GetPolicyTemplate);
+            console.log("Logging...");
+            view.webview.html = baseTemplateFn({
+                content: getPolicyTemplateFn({
+                    FunctionName: lambda.lambda.FunctionName,
+                    Policy: funcResponse.Policy!
+                })
             });
-        } catch (e) {
-            status.dispose();
-            console.log(e);
-            throw e;
         }
-    }
-}
-
-class Lambda implements LambdaObject {
-
-    constructor(
-        readonly id: string,
-        readonly lambda: FunctionConfiguration,
-        readonly lambdaClient: AWS.Lambda
-    ) {
-    }
-
-    getChildren(): vscode.ProviderResult<LambdaObject[]> {
-        return [];
-    }
-
-    getTreeItem(): vscode.TreeItem | Thenable<vscode.TreeItem> {
-        const treeItem = new vscode.TreeItem(this.id, vscode.TreeItemCollapsibleState.Collapsed);
-        treeItem.collapsibleState = vscode.TreeItemCollapsibleState.None;
-        return treeItem;
+        catch (err) {
+            const ex: AWSError = err;
+            console.log(ex.message);
+        }
     }
 }
