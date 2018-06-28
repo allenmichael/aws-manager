@@ -10,54 +10,65 @@
     "categories": [
         "Other"
     ],
+    "activationEvents": [
+        "onView:awsManager",
+        "onView:lambdaExplorer",
+        "onView:s3Explorer",
+        "onCommand:lambdaExplorer.getConfig",
+        "onCommand:lambdaExplorer.invoke",
+        "onCommand:lambdaExplorer.getPolicy",
+        "onCommand:lambdaExplorer.configureRegion"
+    ],
     "main": "./out/extension",
     "contributes": {
-        "commands": [
+        "commands": [{
+                "command": "aws.selectRegion",
+                "title": "Select a region",
+                "category": "AWS"
+            },
             {
                 "command": "lambdaExplorer.getConfig",
-                "title": "Get Configuration"
+                "title": "%AWS.getConfig%",
+                "category": "AWS"
             },
             {
                 "command": "lambdaExplorer.invoke",
                 "title": "Invoke"
             },
             {
-                "command": "lambdaExplorer.configureRegion",
-                "title": "Configure Region"
+                "command": "lambdaExplorer.getPolicy",
+                "title": "Get Policy"
             }
         ],
         "viewsContainers": {
-            "activitybar": [
-                {
-                    "id": "aws",
-                    "title": "AWS",
-                    "icon": "resources/aws.svg"
-                }
-            ]
+            "activitybar": [{
+                "id": "aws",
+                "title": "AWS",
+                "icon": "resources/aws.svg"
+            }]
         },
         "views": {
-            "aws": [
-                {
-                    "id": "lambdaExplorer",
-                    "name": "AWS Lambda Explorer"
-                },
-                {
-                    "id": "s3Explorer",
-                    "name": "AWS S3 Explorer"
-                }
-            ]
+            "aws": [{
+                "id": "lambdaExplorer",
+                "name": "AWS Lambda Explorer"
+            }, {
+                "id": "s3Explorer",
+                "name": "AWS S3 Explorer"
+            }]
         },
         "menus": {
-            "view/title": [
-                {
-                    "command": "lambdaExplorer.configureRegion",
+            "view/title": [{
+                "command": "aws.selectRegion",
+                "when": "view == lambdaExplorer",
+                "group": "navigation"
+            }],
+            "view/item/context": [{
+                    "command": "lambdaExplorer.getConfig",
                     "group": "0",
                     "when": "view == lambdaExplorer"
-                }
-            ],
-            "view/item/context": [
+                },
                 {
-                    "command": "lambdaExplorer.getConfig",
+                    "command": "lambdaExplorer.getPolicy",
                     "group": "0",
                     "when": "view == lambdaExplorer"
                 },

@@ -1,30 +1,28 @@
 import * as vscode from 'vscode';
 import * as AWS from 'aws-sdk';
-import { ClientBuilder } from './ClientBuilder';
+import { ext } from './extensionGlobals';
+import { IAWSTreeProvider } from './aws-tree-provider';
 
 export interface S3Object {
     readonly id: string;
-    readonly s3Client: AWS.S3;
     readonly bucket?: AWS.S3.Bucket;
     readonly object?: AWS.S3.Object;
     getChildren(): vscode.ProviderResult<S3Object[]>;
     getTreeItem(): vscode.TreeItem | Thenable<vscode.TreeItem>;
 }
 
-export class S3ExplorerProvider implements vscode.TreeDataProvider<S3Object> {
-    s3Client: AWS.S3;
+export class S3ExplorerProvider implements vscode.TreeDataProvider<S3Object>, IAWSTreeProvider {
     private _onDidChangeTreeData: vscode.EventEmitter<S3Object | undefined> = new vscode.EventEmitter<S3Object | undefined>();
     readonly onDidChangeTreeData: vscode.Event<S3Object | undefined> = this._onDidChangeTreeData.event;
 
-    constructor(private context: vscode.ExtensionContext, s3Client: AWS.S3, builderContext: ClientBuilder) {
+    constructor(private context: vscode.ExtensionContext) {
         console.log(process.env);
-        this.s3Client = s3Client;
         this.context.subscriptions.push(
             // vscode.commands.registerCommand('s3Explorer.getConfig', this.getConfig)
-            vscode.commands.registerCommand('s3Explorer.configureRegion', async () => {
-                this.s3Client = await builderContext.configureRegion('s3') as AWS.S3;
-                this.refresh();
-            })
+            // vscode.commands.registerCommand('s3Explorer.configureRegion', async () => {
+            //     this.s3Client = await builderContext.configureRegion('s3') as AWS.S3;
+            //     this.refresh();
+            // })
         );
     }
 
@@ -74,12 +72,12 @@ export class S3ExplorerProvider implements vscode.TreeDataProvider<S3Object> {
     private async getBuckets(): Promise<S3Object[]> {
         const status = vscode.window.setStatusBarMessage('Loading buckets...');
         try {
-            const bucketsResponse = await this.s3Client.listBuckets().promise();
+            const bucketsResponse = await ext.s3Client.listBuckets().promise();
             status.dispose();
             const buckets = bucketsResponse.Buckets ? bucketsResponse.Buckets : [];
             return buckets.map(b => {
                 const name = b.Name ? b.Name : "";
-                return new Bucket(name, b, this.s3Client);
+                return new Bucket(name, b, ext.s3Client);
             });
         } catch(e) {
             status.dispose();
